@@ -6,6 +6,7 @@ namespace LM
 {
     public class PlayerLocomotion : MonoBehaviour
     {
+        PlayerManager playerManager;
         Transform cameraObject; // 相机物体的Transform
         InputHandler inputHandler; // 输入处理器
         Vector3 moveDirection; // 移动方向向量
@@ -18,40 +19,23 @@ namespace LM
         public new Rigidbody rigidbody; // 刚体组件
         public GameObject normalCamera; // 普通相机物体
 
-        [Header("Stats")] // 在Inspector中显示一个标题为"Stats"的分组
+        [Header("Movement Stats")] // 在Inspector中显示一个标题为"Stats"的分组
         [SerializeField]
         float movementSpeed = 5; // 移动速度
         [SerializeField]
+        float sprintSpeed = 7; // 冲刺速度
+        [SerializeField]
         float rotationSpeed = 10; // 旋转速度
+
         void Start()
         {
+            playerManager = GetComponent<PlayerManager>();
             rigidbody = GetComponent<Rigidbody>();
             inputHandler = GetComponent<InputHandler>();
             animationHandler = GetComponentInChildren<AnimatorHandler>();
             cameraObject = Camera.main.transform;
             myTransform = transform;
             animationHandler.Initialize();
-        }
-
-        public void Update()
-        {
-            float delta = Time.deltaTime; // 获取时间间隔
-            inputHandler.TickInput(delta); // 处理输入
-            moveDirection = cameraObject.forward * inputHandler.vertical; // 计算移动方向（前后）
-            moveDirection += cameraObject.right * inputHandler.horizontal; // 添加移动方向（左右）
-            moveDirection.Normalize(); // 归一化移动方向
-
-            float speed = movementSpeed; // 移动速度
-            moveDirection *= speed; // 根据速度调整移动方向
-            Vector3 projectVelocity = Vector3.ProjectOnPlane(moveDirection, normalVector); // 将移动方向投影到法线向量所在平面上
-            rigidbody.velocity = projectVelocity; // 应用移动速度到刚体的速度属性
-
-            animationHandler.UpdateAnimatorValues(inputHandler.moveAmount, 0); // 更新动画参数
-
-            if (animationHandler.canRotate) // 如果允许旋转
-            {
-                HandleRotation(delta); // 处理旋转
-            }
         }
         #region Movement
         Vector3 normalVector;
@@ -74,6 +58,68 @@ namespace LM
             Quaternion targetRotation = Quaternion.Slerp(myTransform.rotation, tr, rs * delta); // 使用球形插值平滑地旋转到目标方向
 
             myTransform.rotation = targetRotation; // 应用旋转到当前物体的Rotation
+        }
+        public void HandleMovement(float delta)
+        {
+            if (inputHandler.rollFlag)
+                return;
+
+            moveDirection = cameraObject.forward * inputHandler.vertical; // 计算移动方向（前后）
+            moveDirection += cameraObject.right * inputHandler.horizontal; // 添加移动方向（左右）
+            moveDirection.Normalize(); // 归一化移动方向
+
+            float speed = movementSpeed; // 移动速度
+
+            if (inputHandler.sprintFlag)
+            {
+                speed = sprintSpeed;
+                playerManager.isSprinting = true;
+                moveDirection *= speed;
+            }
+            else
+            {
+                moveDirection *= speed; // 根据速度调整移动方向
+            }
+
+            Vector3 projectVelocity = Vector3.ProjectOnPlane(moveDirection, normalVector); // 将移动方向投影到法线向量所在平面上
+            rigidbody.velocity = projectVelocity; // 应用移动速度到刚体的速度属性
+
+            animationHandler.UpdateAnimatorValues(inputHandler.moveAmount, 0, playerManager.isSprinting); // 更新动画参数
+
+            if (animationHandler.canRotate) // 如果允许旋转
+            {
+                HandleRotation(delta); // 处理旋转
+            }
+        }
+        public void HandleRollingAndSprinting(float delta)
+        {
+            if (animationHandler.anim.GetBool("isInteracting")) return;
+            // 如果输入处理程序中的rollFlag为真
+            if (inputHandler.rollFlag)
+            {
+                // 计算移动方向为摄像头的前方乘以垂直输入 + 摄像头的右方乘以水平输入
+                moveDirection = cameraObject.forward * inputHandler.vertical;
+                moveDirection += cameraObject.right * inputHandler.horizontal;
+
+                // 如果移动量大于 0
+                if (inputHandler.moveAmount > 0)
+                {
+                    // 播放目标动画"Rolling"，循环为真
+                    animationHandler.PlayTargetAnimation("Rolling", true);
+
+                    // 将移动方向的y轴设为0，使角色只在水平面上滚动
+                    moveDirection.y = 0;
+
+                    // 创建一个朝向moveDirection的Quaternion对象rollRotation，并将角色的旋转设为rollRotation
+                    Quaternion rollRotation = Quaternion.LookRotation(moveDirection);
+                    myTransform.rotation = rollRotation;
+                }
+                else
+                {
+                    // 播放目标动画"Rolling"，循环为假
+                    animationHandler.PlayTargetAnimation("Rolling", false);
+                }
+            }
         }
         #endregion
     }
