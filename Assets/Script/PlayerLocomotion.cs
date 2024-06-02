@@ -9,7 +9,7 @@ namespace LM
         PlayerManager playerManager;
         Transform cameraObject; // 相机物体的Transform
         InputHandler inputHandler; // 输入处理器
-        Vector3 moveDirection; // 移动方向向量
+        public Vector3 moveDirection; // 移动方向向量
 
         [HideInInspector]
         public Transform myTransform; // 当前物体的Transform（隐藏在Inspector中）
@@ -19,13 +19,27 @@ namespace LM
         public new Rigidbody rigidbody; // 刚体组件
         public GameObject normalCamera; // 普通相机物体
 
+        [Header("Ground & Air Detection Stats")]
+        [SerializeField]
+        float groundDetectionRayStartPoint = 0.5f;
+        [SerializeField]
+        float minimumDistanceNeedToBeginFall = 1f;
+        [SerializeField]
+        float groundDirectionRayDistance = 0.2f;
+        LayerMask ignoreForGroundCheck;
+        public float inAirTimer;
+
         [Header("Movement Stats")] // 在Inspector中显示一个标题为"Stats"的分组
         [SerializeField]
         float movementSpeed = 5; // 移动速度
         [SerializeField]
+        float walkingSpeed = 1; // 行走速度
+        [SerializeField]
         float sprintSpeed = 7; // 冲刺速度
         [SerializeField]
         float rotationSpeed = 10; // 旋转速度
+        [SerializeField]
+        float fallingSpeed = 18;
 
         void Start()
         {
@@ -36,6 +50,9 @@ namespace LM
             cameraObject = Camera.main.transform;
             myTransform = transform;
             animationHandler.Initialize();
+
+            playerManager.isGrounded = true;
+            ignoreForGroundCheck = ~(1 << 8 | 1 << 11);
         }
         #region Movement
         Vector3 normalVector;
@@ -62,6 +79,9 @@ namespace LM
         public void HandleMovement(float delta)
         {
             if (inputHandler.rollFlag)
+                return;
+
+            if (playerManager.isInteracting)
                 return;
 
             moveDirection = cameraObject.forward * inputHandler.vertical; // 计算移动方向（前后）
@@ -118,6 +138,78 @@ namespace LM
                 {
                     // 播放目标动画"Rolling"，循环为假
                     animationHandler.PlayTargetAnimation("Rolling", false);
+                }
+            }
+        }
+        public void HandleFalling(float delta, Vector3 moveDirection)
+        {
+            playerManager.isGrounded = false;
+            RaycastHit hit;
+            Vector3 origin = myTransform.position;
+            origin.y += groundDetectionRayStartPoint;
+            if (Physics.Raycast(origin, myTransform.forward, out hit, 0.4f))
+            {
+                moveDirection = Vector3.zero;
+            }
+            if (playerManager.isInAir)
+            {
+                rigidbody.AddForce(-Vector3.up * fallingSpeed);
+                rigidbody.AddForce(moveDirection * fallingSpeed / 10f);
+            }
+            Vector3 dir = moveDirection;
+            dir.Normalize();
+            origin = origin + dir * groundDirectionRayDistance;
+            targetPosition = myTransform.position;
+
+            Debug.DrawRay(origin, -Vector3.up * minimumDistanceNeedToBeginFall, Color.red, 0.1f, false);
+            if (Physics.Raycast(origin, -Vector3.up, out hit, minimumDistanceNeedToBeginFall, ignoreForGroundCheck))
+            {
+                normalVector = hit.normal;
+                Vector3 tp = hit.point;
+                playerManager.isGrounded = true;
+                targetPosition.y = tp.y;
+                if (playerManager.isInAir)
+                {
+                    if (inAirTimer > 0.5f)
+                    {
+                        Debug.Log("You were in the air for " + inAirTimer);
+                        animationHandler.PlayTargetAnimation("Land", true);
+                    }
+                    else
+                    {
+                        animationHandler.PlayTargetAnimation("Empty", false);
+                        inAirTimer = 0;
+                    }
+                    playerManager.isInAir = false;
+                }
+            }
+            else
+            {
+                if (playerManager.isGrounded)
+                {
+                    playerManager.isGrounded = false;
+                }
+                if (playerManager.isInAir == false)
+                {
+                    if (playerManager.isInteracting == false)
+                    {
+                        animationHandler.PlayTargetAnimation("Falling", true);
+                    }
+                    Vector3 vel = rigidbody.velocity;
+                    vel.Normalize();
+                    rigidbody.velocity = vel * (movementSpeed / 2);
+                    playerManager.isInAir = true;
+                }
+            }
+            if (playerManager.isGrounded)
+            {
+                if (playerManager.isInteracting || inputHandler.moveAmount > 0)
+                {
+                    myTransform.position = Vector3.Lerp(myTransform.position, targetPosition, Time.deltaTime);
+                }
+                else
+                {
+                    myTransform.position = targetPosition;
                 }
             }
         }
