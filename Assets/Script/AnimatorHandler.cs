@@ -89,6 +89,14 @@ namespace LM
         {
             canRotate = false;
         }
+        public void EnableCombo()
+        {
+            anim.SetBool("canDoCombo", true);
+        }
+        public void DisableCombo()
+        {
+            anim.SetBool("canDoCombo", false);
+        }
         private void OnAnimatorMove()
         {
             if (!playerManager.isInteracting)
